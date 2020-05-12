@@ -33,8 +33,8 @@ Smart Dns RUST实现智能DNS  对标Dnspod
 | ANCOUNT  | Answer Count         | 16 bits            | The number of entries in the Answer Section                                                                                                                                         |
 | NSCOUNT  | Authority Count      | 16 bits            | The number of entries in the Authority Section                                                                                                                                      |
 | ARCOUNT  | Additional Count     | 16 bits            | The number of entries in the Additional Section                                                                                                                                     |
-The question is quite a bit less scary:
 
+The question is quite a bit less scary:
 | Field  | Type           | Description                                                          |
 | ------ | -------------- | -------------------------------------------------------------------- |
 | Name   | Label Sequence | The domain name, encoded as a sequence of labels as described below. |
