@@ -11,3 +11,4 @@ Cargo.lock
 .idea
 
 try-dns/target
+edns/target

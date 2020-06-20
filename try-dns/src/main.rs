@@ -11,7 +11,8 @@ use try_dns::*;
 fn main() -> Result<(),Box<dyn Error>> {
     // test1()?;
 
-    test2()?;
+    // test2()?;
+    test3()?;
 
     Ok(())
 }
@@ -96,4 +97,18 @@ fn test2() -> Result<(),Box<dyn Error>> {
     }
 
     Ok(())
+}
+
+fn test3() -> Result<(),Box<dyn Error>> {
+    // Bind an UDP socket on port 2053
+    let socket = UdpSocket::bind(("0.0.0.0", 2053))?;
+
+    // For now, queries are handled sequentially, so an infinite loop for servicing
+    // requests is initiated.
+    loop {
+        match parser::handle_query(&socket) {
+            Ok(_) => {},
+            Err(e) => eprintln!("An error occured: {}", e),
+        }
+    }
 }

@@ -733,10 +733,132 @@ impl DnsPacket {
         Ok(())
     }
 
+    // add 递归查询
+    /// It's useful to be able to pick a random A record from a packet. When we
+    /// get multiple IP's for a single name, it doesn't matter which one we
+    /// choose, so in those cases we can now pick one at random.
+    pub fn get_random_a(&self) -> Option<Ipv4Addr> {
+        self.answers
+            .iter()
+            .filter_map(|record| match record {
+                DnsRecord::A { addr, .. } => Some(*addr),
+                _ => None,
+            })
+            .next()
+    }
+
+    /// A helper function which returns an iterator over all name servers in
+    /// the authorities section, represented as (domain, host) tuples
+    fn get_ns<'a>(&'a self, qname: &'a str) -> impl Iterator<Item = (&'a str, &'a str)> {
+        self.authorities
+            .iter()
+            // In practice, these are always NS records in well formed packages.
+            // Convert the NS records to a tuple which has only the data we need
+            // to make it easy to work with.
+            .filter_map(|record| match record {
+                DnsRecord::NS { domain, host, .. } => Some((domain.as_str(), host.as_str())),
+                _ => None,
+            })
+            // Discard servers which aren't authoritative to our query
+            .filter(move |(domain, _)| qname.ends_with(*domain))
+    }
+
+    /// We'll use the fact that name servers often bundle the corresponding
+    /// A records when replying to an NS query to implement a function that
+    /// returns the actual IP for an NS record if possible.
+    pub fn get_resolved_ns(&self, qname: &str) -> Option<Ipv4Addr> {
+        // Get an iterator over the nameservers in the authorities section
+        self.get_ns(qname)
+            // Now we need to look for a matching A record in the additional
+            // section. Since we just want the first valid record, we can just
+            // build a stream of matching records.
+            .flat_map(|(_, host)| {
+                self.resources
+                    .iter()
+                    // Filter for A records where the domain match the host
+                    // of the NS record that we are currently processing
+                    .filter_map(move |record| match record {
+                        DnsRecord::A { domain, addr, .. } if domain == host => Some(addr),
+                        _ => None,
+                    })
+            })
+            .map(|addr| *addr)
+            // Finally, pick the first valid entry
+            .next()
+    }
+
+    /// However, not all name servers are as that nice. In certain cases there won't
+    /// be any A records in the additional section, and we'll have to perform *another*
+    /// lookup in the midst. For this, we introduce a method for returning the host
+    /// name of an appropriate name server.
+    pub fn get_unresolved_ns<'a>(&'a self, qname: &'a str) -> Option<&'a str> {
+        // Get an iterator over the nameservers in the authorities section
+        self.get_ns(qname)
+            .map(|(_, host)| host)
+            // Finally, pick the first valid entry
+            .next()
+    }
+}
+
+fn recursive_lookup(qname: &str, qtype: QueryType) -> Result<DnsPacket,Box<dyn Error>> {
+    // For now we're always starting with *a.root-servers.net*.
+    let mut ns = "198.41.0.4".parse::<Ipv4Addr>().unwrap();
+
+    // Since it might take an arbitrary number of steps, we enter an unbounded loop.
+    loop {
+        println!("attempting lookup of {:?} {} with ns {}", qtype, qname, ns);
+
+        // The next step is to send the query to the active server.
+        let ns_copy = ns;
+
+        let server = (ns_copy, 53);
+        let response = lookup(qname, qtype, server)?;
+
+        // If there are entries in the answer section, and no errors, we are done!
+        if !response.answers.is_empty() && response.header.rescode == ResultCode::NOERROR {
+            return Ok(response);
+        }
+
+        // We might also get a `NXDOMAIN` reply, which is the authoritative name servers
+        // way of telling us that the name doesn't exist.
+        if response.header.rescode == ResultCode::NXDOMAIN {
+            return Ok(response);
+        }
+
+        // Otherwise, we'll try to find a new nameserver based on NS and a corresponding A
+        // record in the additional section. If this succeeds, we can switch name server
+        // and retry the loop.
+        if let Some(new_ns) = response.get_resolved_ns(qname) {
+            ns = new_ns;
+
+            continue;
+        }
+
+        // If not, we'll have to resolve the ip of a NS record. If no NS records exist,
+        // we'll go with what the last server told us.
+        let new_ns_name = match response.get_unresolved_ns(qname) {
+            Some(x) => x,
+            None => return Ok(response),
+        };
+
+        // Here we go down the rabbit hole by starting _another_ lookup sequence in the
+        // midst of our current one. Hopefully, this will give us the IP of an appropriate
+        // name server.
+        let recursive_response = recursive_lookup(&new_ns_name, QueryType::A)?;
+
+        // Finally, we pick a random ip from the result, and restart the loop. If no such
+        // record is available, we again return the last result we got.
+        if let Some(new_ns) = recursive_response.get_random_a() {
+            ns = new_ns;
+        } else {
+            return Ok(response);
+        }
+    }
 }
 
 // # Lookup
-pub fn lookup(qname: &str,qtype: QueryType) -> Result<DnsPacket,Box<dyn Error>> {
+fn lookup(qname: &str, qtype: QueryType, server: (Ipv4Addr, u16)) -> Result<DnsPacket,Box<dyn Error>> {
+
     // let server = ("8.8.8.8",53);
     //
     // let socket = UdpSocket::bind("0.0.0.0")?;
@@ -758,7 +880,7 @@ pub fn lookup(qname: &str,qtype: QueryType) -> Result<DnsPacket,Box<dyn Error>> 
     //
     // DnsPacket::from_buffer(&mut res_buffer)
     // Forward queries to Google's public DNS
-    let server = ("8.8.8.8", 53);
+    // let server = ("8.8.8.8", 53);
 
     let socket = UdpSocket::bind(("0.0.0.0", 43210))?;
 
@@ -783,38 +905,22 @@ pub fn lookup(qname: &str,qtype: QueryType) -> Result<DnsPacket,Box<dyn Error>> 
 
 /// Handle a single incoming packet
 pub fn handle_query(socket: &UdpSocket) -> Result<(),Box<dyn Error>> {
-    // With a socket ready, we can go ahead and read a packet. This will
-    // block until one is received.
     let mut req_buffer = BytePacketBuffer::new();
-
-    // The `recv_from` function will write the data into the provided buffer,
-    // and return the length of the data read as well as the source address.
-    // We're not interested in the length, but we need to keep track of the
-    // source in order to send our reply later on.
     let (_, src) = socket.recv_from(&mut req_buffer.buf)?;
 
-    // Next, `DnsPacket::from_buffer` is used to parse the raw bytes into
-    // a `DnsPacket`.
     let mut request = DnsPacket::from_buffer(&mut req_buffer)?;
 
-    // Create and initialize the response packet
     let mut packet = DnsPacket::new();
     packet.header.id = request.header.id;
     packet.header.recursion_desired = true;
     packet.header.recursion_available = true;
     packet.header.response = true;
 
-    // In the normal case, exactly one question is present
     if let Some(question) = request.questions.pop() {
         println!("Received query: {:?}", question);
 
-        // Since all is set up and as expected, the query can be forwarded to the
-        // target server. There's always the possibility that the query will
-        // fail, in which case the `SERVFAIL` response code is set to indicate
-        // as much to the client. If rather everything goes as planned, the
-        // question and response records as copied into our response packet.
-        if let Ok(result) = lookup(&question.name, question.qtype) {
-            packet.questions.push(question);
+        if let Ok(result) = recursive_lookup(&question.name, question.qtype) {
+            packet.questions.push(question.clone());
             packet.header.rescode = result.header.rescode;
 
             for rec in result.answers {
@@ -832,15 +938,10 @@ pub fn handle_query(socket: &UdpSocket) -> Result<(),Box<dyn Error>> {
         } else {
             packet.header.rescode = ResultCode::SERVFAIL;
         }
-    }
-    // Being mindful of how unreliable input data from arbitrary senders can be, we
-    // need make sure that a question is actually present. If not, we return `FORMERR`
-    // to indicate that the sender made something wrong.
-    else {
+    } else {
         packet.header.rescode = ResultCode::FORMERR;
     }
 
-    // The only thing remaining is to encode our response and send it off!
     let mut res_buffer = BytePacketBuffer::new();
     packet.write(&mut res_buffer)?;
 
@@ -851,3 +952,4 @@ pub fn handle_query(socket: &UdpSocket) -> Result<(),Box<dyn Error>> {
 
     Ok(())
 }
+
