@@ -10,4 +10,4 @@ Cargo.lock
 **/*.rs.bk
 .idea
 
-try-dnsv/target/
+try-dns/target
