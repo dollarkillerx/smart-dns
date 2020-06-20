@@ -42,8 +42,11 @@ fn test1() -> Result<(),Box<dyn Error>> {
 
 fn test2() -> Result<(),Box<dyn Error>> {
     // Perform an A query for google.com
-    let qname = "www.google.com";
-    let qtype = parser::QueryType::A;
+    // let qname = "www.baidu.com";
+    // let qtype = parser::QueryType::A;
+
+    let qname = "yahoo.com";
+    let qtype = parser::QueryType::MX;
 
     // Using googles public DNS server
     let server = ("8.8.8.8", 53);
