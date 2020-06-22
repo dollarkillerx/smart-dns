@@ -767,7 +767,7 @@ pub fn handle_query(socket: Arc<UdpSocket>, src: SocketAddr, mut req_buffer: Byt
     // a `DnsPacket`.
     let mut request = DnsPacket::from_buffer(&mut req_buffer)?;
 
-    // Create and initialize the response packet
+    // 创建并初始化响应数据包
     let mut packet = DnsPacket::new();
     packet.header.id = request.header.id;
     packet.header.recursion_desired = true;
@@ -778,11 +778,8 @@ pub fn handle_query(socket: Arc<UdpSocket>, src: SocketAddr, mut req_buffer: Byt
     if let Some(question) = request.questions.pop() {
         println!("Received query: {:?}", question);
 
-        // Since all is set up and as expected, the query can be forwarded to the
-        // target server. There's always the possibility that the query will
-        // fail, in which case the `SERVFAIL` response code is set to indicate
-        // as much to the client. If rather everything goes as planned, the
-        // question and response records as copied into our response packet.
+        // 由于所有步骤均已设置并且符合预期，因此可以将查询转发到目标服务器。 总是有可能查询将
+    // 失败，在这种情况下，`SERVFAIL`响应代码被设置为向客户端指示尽可能多的内容。 如果一切都按计划进行，那么问题和响应记录将复制到我们的响应数据包中。
         if let Ok(result) = lookup(&question.name, question.qtype) {
             packet.questions.push(question);
             packet.header.rescode = result.header.rescode;
@@ -803,14 +800,12 @@ pub fn handle_query(socket: Arc<UdpSocket>, src: SocketAddr, mut req_buffer: Byt
             packet.header.rescode = ResultCode::SERVFAIL;
         }
     }
-    // Being mindful of how unreliable input data from arbitrary senders can be, we
-    // need make sure that a question is actually present. If not, we return `FORMERR`
-    // to indicate that the sender made something wrong.
+    // 注意来自任意发件人的输入数据有多不可靠，我们需要确保确实存在问题。 如果没有，我们将返回“ FORMERR”以表明发送者做错了什么。
     else {
         packet.header.rescode = ResultCode::FORMERR;
     }
 
-    // The only thing remaining is to encode our response and send it off!
+    //剩下的唯一事情就是对我们的响应进行编码并发送出去！
     let mut res_buffer = BytePacketBuffer::new();
     packet.write(&mut res_buffer)?;
 
