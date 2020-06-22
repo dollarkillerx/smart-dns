@@ -779,14 +779,13 @@ pub fn handle_query(socket: Arc<UdpSocket>, src: SocketAddr, mut req_buffer: Byt
 
     // In the normal case, exactly one question is present
     if let Some(question) = request.questions.pop() {
-        println!("Received query: {:?}", question);
+        println!("IP: {}  Received query: {:?}", src.ip(),question);
 
         // 由于所有步骤均已设置并且符合预期，因此可以将查询转发到目标服务器。 总是有可能查询将
     // 失败，在这种情况下，`SERVFAIL`响应代码被设置为向客户端指示尽可能多的内容。 如果一切都按计划进行，那么问题和响应记录将复制到我们的响应数据包中。
-        if let Ok(result) = lookup(&question.name, question.qtype) {
+        if let Ok(result) = lookup(&question.name, question.qtype.clone()) {
             packet.questions.push(question);
             packet.header.rescode = result.header.rescode;
-
             for rec in result.answers {
                 println!("Answer: {:?}", rec);
                 packet.answers.push(rec);
