@@ -7,7 +7,7 @@ Smart Dns RUST实现智能DNS  对标Dnspod
 - master 
 
 
-RUST依赖glibc  这个最好底一点
+RUST依赖glibc  这个最好版本低一点 不然一些老系统无法运行
 ```shell script
 [target.x86_64-unknown-linux-musl]
 linker = "x86_64-openwrt-linux-gcc"
