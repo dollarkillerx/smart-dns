@@ -5,11 +5,7 @@ use smart_dns::*;
 use std::sync::Arc;
 
 fn main() ->Result<(),Box<dyn Error>> {
-<<<<<<< HEAD
-    // Bind an UDP socket on port 2053
-=======
     // Bind an UDP socket on port 53  (53需要root权限)
->>>>>>> 68e69611247edb77b271d1e993329fda9ecf635b
     let socket = Arc::new(UdpSocket::bind(("0.0.0.0", 53))?);
 
     loop {
