@@ -37,6 +37,9 @@ impl BytePacketBuffer {
         if self.pos > 512 {
             return Err("End of buffer".into());
         }
+        if self.pos > self.buf.len() {
+            return Err("Array out of bounds".into());
+        }
         let res = self.buf[self.pos];
         self.pos += 1;
         Ok(res)
@@ -510,9 +513,9 @@ impl DnsRecord {
                 );
 
                 Ok(DnsRecord::AAAA {
-                    domain: domain,
-                    addr: addr,
-                    ttl: ttl,
+                    domain,
+                    addr,
+                    ttl,
                 })
             }
             QueryType::NS => {
@@ -520,9 +523,9 @@ impl DnsRecord {
                 buffer.read_qname(&mut ns)?;
 
                 Ok(DnsRecord::NS {
-                    domain: domain,
+                    domain,
                     host: ns,
-                    ttl: ttl,
+                    ttl,
                 })
             }
             QueryType::CNAME => {
@@ -530,9 +533,9 @@ impl DnsRecord {
                 buffer.read_qname(&mut cname)?;
 
                 Ok(DnsRecord::CNAME {
-                    domain: domain,
+                    domain,
                     host: cname,
-                    ttl: ttl,
+                    ttl,
                 })
             }
             QueryType::MX => {
@@ -541,20 +544,20 @@ impl DnsRecord {
                 buffer.read_qname(&mut mx)?;
 
                 Ok(DnsRecord::MX {
-                    domain: domain,
-                    priority: priority,
+                    domain,
+                    priority,
                     host: mx,
-                    ttl: ttl,
+                    ttl,
                 })
             }
             QueryType::UNKNOWN(_) => {
                 buffer.step(data_len as usize)?;
 
                 Ok(DnsRecord::UNKNOWN {
-                    domain: domain,
+                    domain,
                     qtype: qtype_num,
-                    data_len: data_len,
-                    ttl: ttl,
+                    data_len,
+                    ttl,
                 })
             }
         }
@@ -738,7 +741,7 @@ impl DnsPacket {
 
 // # Lookup
 pub fn lookup(qname: &str,qtype: QueryType) -> Result<DnsPacket,Box<dyn Error>> {
-    let server = ("8.8.8.8", 53);
+    let server = ("1.1.1.1", 53);
 
     let socket = UdpSocket::bind(("0.0.0.0", 43210))?;
 

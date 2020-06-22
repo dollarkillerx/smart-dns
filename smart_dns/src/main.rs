@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 fn main() ->Result<(),Box<dyn Error>> {
     // Bind an UDP socket on port 2053
-    let socket = Arc::new(UdpSocket::bind(("0.0.0.0", 2053))?);
+    let socket = Arc::new(UdpSocket::bind(("0.0.0.0", 53))?);
 
     loop {
         let mut req_buffer = core_dns::BytePacketBuffer::new();
